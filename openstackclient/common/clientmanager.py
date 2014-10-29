@@ -19,10 +19,6 @@ import logging
 import pkg_resources
 import sys
 
-from keystoneclient import session
-import requests
-
-from openstackclient.api import auth
 from openstackclient.identity import client as identity_client
 
 
@@ -48,109 +44,38 @@ class ClientManager(object):
     """Manages access to API clients, including authentication."""
     identity = ClientCache(identity_client.make_client)
 
-    def __getattr__(self, name):
-        # this is for the auth-related parameters.
-        if name in ['_' + o.replace('-', '_')
-                    for o in auth.OPTIONS_LIST]:
-            return self._auth_params[name[1:]]
-
     def __init__(
         self,
-        auth_options,
+        session,
+        region_name=None,
+        timing=None,
         api_version=None,
-        verify=True,
-        pw_func=None,
     ):
         """Set up a ClientManager
 
-        :param auth_options:
-            Options collected from the command-line, environment, or wherever
+        :param session:
+            The session to communicate with the clients.
         :param api_version:
             Dict of API versions: key is API name, value is the version
-        :param verify:
-            TLS certificate verification; may be a boolean to enable or disable
-            server certificate verification, or a filename of a CA certificate
-            bundle to be used in verification (implies True)
-        :param pw_func:
-            Callback function for asking the user for a password.  The function
-            takes an optional string for the prompt ('Password: ' on None) and
-            returns a string containig the password
         """
 
-        # If no auth type is named by the user, select one based on
-        # the supplied options
-        self.auth_plugin_name = auth.select_auth_plugin(auth_options)
-
-        # Horrible hack alert...must handle prompt for null password if
-        # password auth is requested.
-        if (self.auth_plugin_name.endswith('password') and
-                not auth_options.os_password):
-            auth_options.os_password = pw_func()
-
-        (auth_plugin, self._auth_params) = auth.build_auth_params(
-            self.auth_plugin_name,
-            auth_options,
-        )
-
-        self._url = auth_options.os_url
-        self._region_name = auth_options.os_region_name
+        self._region_name = region_name
         self._api_version = api_version
-        self._auth_ref = None
-        self.timing = auth_options.timing
-
-        # For compatibility until all clients can be updated
-        if 'project_name' in self._auth_params:
-            self._project_name = self._auth_params['project_name']
-        elif 'tenant_name' in self._auth_params:
-            self._project_name = self._auth_params['tenant_name']
-
-        # verify is the Requests-compatible form
-        self._verify = verify
-        # also store in the form used by the legacy client libs
-        self._cacert = None
-        if isinstance(verify, bool):
-            self._insecure = not verify
-        else:
-            self._cacert = verify
-            self._insecure = False
-
-        # Get logging from root logger
-        root_logger = logging.getLogger('')
-        LOG.setLevel(root_logger.getEffectiveLevel())
-
-        LOG.info('Using auth plugin: %s' % self.auth_plugin_name)
-        self.auth = auth_plugin.load_from_options(**self._auth_params)
-        # needed by SAML authentication
-        request_session = requests.session()
-        self.session = session.Session(
-            auth=self.auth,
-            session=request_session,
-            verify=verify,
-        )
+        # self._auth_ref = None
+        self.timing = timing
+        self.session = session
 
         return
 
     @property
     def auth_ref(self):
         """Dereference will trigger an auth if it hasn't already"""
-        if not self._auth_ref:
-            LOG.debug("Get auth_ref")
-            self._auth_ref = self.auth.get_auth_ref(self.session)
-        return self._auth_ref
+        return self.auth.get_auth_ref(self.session)
 
     def get_endpoint_for_service_type(self, service_type, region_name=None):
         """Return the endpoint URL for the service type."""
-        # See if we are using password flow auth, i.e. we have a
-        # service catalog to select endpoints from
-        if self.auth_ref:
-            endpoint = self.auth_ref.service_catalog.url_for(
-                service_type=service_type,
-                region_name=region_name,
-            )
-        else:
-            # Get the passed endpoint directly from the auth plugin
-            endpoint = self.auth.get_endpoint(self.session)
-        return endpoint
+        return self.session.get_endpoint(service_type=service_type,
+                                         region_name=region_name)
 
 
 # Plugin Support

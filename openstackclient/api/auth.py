@@ -14,212 +14,117 @@
 """Authentication Library"""
 
 import argparse
+import getpass
 import logging
+import sys
+import time
 
-import stevedore
-
+from keystoneclient import auth
+from keystoneclient.auth.identity import generic
+from keystoneclient.auth.identity import v2
+from keystoneclient.auth.identity import v3
+from keystoneclient.auth import token_endpoint
+from keystoneclient import session
 from oslo.config import cfg
-
-from keystoneclient.auth import base
 
 from openstackclient.common import exceptions as exc
 from openstackclient.common import utils
 
-
 LOG = logging.getLogger(__name__)
 
 
-# Initialize the list of Authentication plugins early in order
-# to get the command-line options
-PLUGIN_LIST = stevedore.ExtensionManager(
-    base.PLUGIN_NAMESPACE,
-    invoke_on_load=False,
-    propagate_map_exceptions=True,
-)
+class Session(session.Session):
 
-# Get the command line options so the help action has them available
-OPTIONS_LIST = {}
-for plugin in PLUGIN_LIST:
-    for o in plugin.plugin.get_options():
-        os_name = o.dest.lower().replace('_', '-')
-        os_env_name = 'OS_' + os_name.upper().replace('-', '_')
-        OPTIONS_LIST.setdefault(os_name, {'env': os_env_name, 'help': ''})
-        # TODO(mhu) simplistic approach, would be better to only add
-        # help texts if they vary from one auth plugin to another
-        # also the text rendering is ugly in the CLI ...
-        OPTIONS_LIST[os_name]['help'] += 'With %s: %s\n' % (
-            plugin.name,
-            o.help,
-        )
+    def __init__(self, *args, **kwargs):
+        self._record_timings = kwargs.pop('timing', False)
+        self.timing_data = []
+        super(Session, self).__init__(*args, **kwargs)
 
+    def request(self, path, method, **kwargs):
+        if self._record_timings:
+            start = time.time()
 
-def select_auth_plugin(options):
-    """Pick an auth plugin based on --os-auth-type or other options"""
+        resp = super(Session, self).request(path, method, **kwargs)
 
-    auth_plugin_name = None
+        if self._record_timings:
+            self.timing_data.append(("%s %s" % (method, resp.url),
+                                     start,
+                                     time.time()))
 
-    if options.os_auth_type in [plugin.name for plugin in PLUGIN_LIST]:
-        # A direct plugin name was given, use it
-        return options.os_auth_type
+        return resp
 
-    if options.os_url and options.os_token:
-        # service token authentication
-        auth_plugin_name = 'token_endpoint'
-    elif options.os_username:
-        if options.os_identity_api_version == '3':
-            auth_plugin_name = 'v3password'
-        elif options.os_identity_api_version == '2.0':
-            auth_plugin_name = 'v2password'
-        else:
-            # let keystoneclient figure it out itself
-            auth_plugin_name = 'password'
-    elif options.os_token:
-        if options.os_identity_api_version == '3':
-            auth_plugin_name = 'v3token'
-        elif options.os_identity_api_version == '2.0':
-            auth_plugin_name = 'v2token'
-        else:
-            # let keystoneclient figure it out itself
-            auth_plugin_name = 'token'
-    else:
-        raise exc.CommandError(
-            "Authentication type must be selected with --os-auth-type"
-        )
-    LOG.debug("Auth plugin %s selected" % auth_plugin_name)
-    return auth_plugin_name
-
-
-def build_auth_params(auth_plugin_name, cmd_options):
-    auth_params = {}
-    if auth_plugin_name:
-        LOG.debug('auth_type: %s', auth_plugin_name)
-        auth_plugin_class = base.get_plugin_class(auth_plugin_name)
-        plugin_options = auth_plugin_class.get_options()
-        for option in plugin_options:
-            option_name = 'os_' + option.dest
-            LOG.debug('fetching option %s' % option_name)
-            auth_params[option.dest] = getattr(cmd_options, option_name, None)
-        # grab tenant from project for v2.0 API compatibility
-        if auth_plugin_name.startswith("v2"):
-            auth_params['tenant_id'] = getattr(
-                cmd_options,
-                'os_project_id',
-                None,
-            )
-            auth_params['tenant_name'] = getattr(
-                cmd_options,
-                'os_project_name',
-                None,
-            )
-    else:
-        LOG.debug('no auth_type')
-        # delay the plugin choice, grab every option
-        plugin_options = set([o.replace('-', '_') for o in OPTIONS_LIST])
-        for option in plugin_options:
-            option_name = 'os_' + option
-            LOG.debug('fetching option %s' % option_name)
-            auth_params[option] = getattr(cmd_options, option_name, None)
-    return (auth_plugin_class, auth_params)
-
-
-def build_auth_plugins_option_parser(parser):
-    """Auth plugins options builder
-
-    Builds dynamically the list of options expected by each available
-    authentication plugin.
-
-    """
-    available_plugins = [plugin.name for plugin in PLUGIN_LIST]
-    parser.add_argument(
-        '--os-auth-type',
-        metavar='<auth-type>',
-        default=utils.env('OS_AUTH_TYPE'),
-        help='Select an auhentication type. Available types: ' +
-             ', '.join(available_plugins) +
-             '. Default: selected based on --os-username/--os-token',
-        choices=available_plugins
-    )
-    # make sur we catch old v2.0 env values
-    envs = {
-        'OS_PROJECT_NAME': utils.env(
-            'OS_PROJECT_NAME',
-            default=utils.env('OS_TENANT_NAME')
-        ),
-        'OS_PROJECT_ID': utils.env(
-            'OS_PROJECT_ID',
-            default=utils.env('OS_TENANT_ID')
-        ),
-    }
-    for o in OPTIONS_LIST:
-        # remove allusion to tenants from v2.0 API
-        if 'tenant' not in o:
-            parser.add_argument(
-                '--os-' + o,
-                metavar='<auth-%s>' % o,
-                default=envs.get(OPTIONS_LIST[o]['env'],
-                                 utils.env(OPTIONS_LIST[o]['env'])),
-                help='%s\n(Env: %s)' % (OPTIONS_LIST[o]['help'],
-                                        OPTIONS_LIST[o]['env']),
-            )
-    # add tenant-related options for compatibility
-    # this is deprecated but still used in some tempest tests...
-    parser.add_argument(
-        '--os-tenant-name',
-        metavar='<auth-tenant-name>',
-        dest='os_project_name',
-        default=utils.env('OS_TENANT_NAME'),
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        '--os-tenant-id',
-        metavar='<auth-tenant-id>',
-        dest='os_project_id',
-        default=utils.env('OS_TENANT_ID'),
-        help=argparse.SUPPRESS,
-    )
-    return parser
-
-
-class TokenEndpoint(base.BaseAuthPlugin):
-    """Auth plugin to handle traditional token/endpoint usage
-
-    Implements the methods required to handle token authentication
-    with a user-specified token and service endpoint; no Identity calls
-    are made for re-scoping, service catalog lookups or the like.
-
-    The purpose of this plugin is to get rid of the special-case paths
-    in the code to handle this authentication format. Its primary use
-    is for bootstrapping the Keystone database.
-    """
-
-    def __init__(self, url, token, **kwargs):
-        """A plugin for static authentication with an existing token
-
-        :param string url: Service endpoint
-        :param string token: Existing token
-        """
-        super(TokenEndpoint, self).__init__()
-        self.endpoint = url
-        self.token = token
-
-    def get_endpoint(self, session, **kwargs):
-        """Return the supplied endpoint"""
-        return self.endpoint
-
-    def get_token(self, session):
-        """Return the supplied token"""
-        return self.token
-
-    def get_auth_ref(self, session, **kwargs):
-        """Stub this method for compatibility"""
-        return None
-
-    # Override this because it needs to be a class method...
     @classmethod
-    def get_options(self):
-        options = super(TokenEndpoint, self).get_options()
+    def register_cli_options(cls, parser):
+        super(Session, cls).register_cli_options(parser)
+
+        parser.add_argument('--timing',
+                            default=False,
+                            action='store_true',
+                            help="Print API call timing info")
+
+    @classmethod
+    def load_from_cli_options(cls, args, **kwargs):
+        kwargs['timing'] = args.timing
+        return super(Session, cls).load_from_cli_options(args, **kwargs)
+
+
+class OSCDefaultAuthPlugin(auth.BaseAuthPlugin):
+
+    def __init__(self, plugin):
+        self._plugin = plugin
+
+    # PROXY FUNCTIONS - emulate a real plugin and send to the inner one.
+    def get_endpoint(self, *args, **kwargs):
+        return self._plugin.get_endpoint(*args, **kwargs)
+
+    def get_token(self, *args, **kwargs):
+        return self._plugin.get_token(*args, **kwargs)
+
+    def invalidate(self, *args, **kwargs):
+        return self._plugin.invalidate(*args, **kwargs)
+
+    @classmethod
+    def get_options(cls):
+        options = super(OSCDefaultAuthPlugin, cls).get_options()
 
         options.extend([
+            cfg.StrOpt('auth-url',
+                       help='Authentication URL (Env: OS_AUTH_URL)'),
+
+            cfg.StrOpt('username',
+                       help='Authentication username (Env: OS_USERNAME)'),
+            cfg.StrOpt('password',
+                       help='Authentication password (Env: OS_PASSWORD)'),
+
+            cfg.StrOpt('user-domain-id',
+                       help='Domain ID of the user (Env: OS_USER_DOMAIN_ID)'),
+            cfg.StrOpt('user-domain-name',
+                       help='Domain name of the user '
+                            '(Env: OS_USER_DOMAIN_NAME)'),
+
+            cfg.StrOpt('project-id',
+                       help='Project ID of the requested project-level '
+                            'authorization scope (Env: OS_PROJECT_ID)'),
+            cfg.StrOpt('project-name',
+                       help='Project name of the requested project-level '
+                            'authorization scope (Env: OS_PROJECT_NAME)'),
+
+            cfg.StrOpt('project-domain-id',
+                       help='Domain ID of the project which is the requested '
+                            'project-level authorization scope '
+                            '(Env: OS_PROJECT_DOMAIN_ID)'),
+            cfg.StrOpt('project-domain-name',
+                       help='Domain name of the project which is the requested'
+                            ' project-level authorization scope'
+                            ' (Env: OS_PROJECT_DOMAIN_NAME)'),
+
+            cfg.StrOpt('domain-id',
+                       help='Domain ID of the requested domain-level '
+                            'authorization scope (Env: OS_DOMAIN_ID)'),
+            cfg.StrOpt('domain-name',
+                       help='Domain name of the requested domain-level '
+                            'authorization scope (Env: OS_DOMAIN_NAME)'),
+
             # Maintain name 'url' for compatibility
             cfg.StrOpt('url',
                        help='Specific service endpoint to use'),
@@ -229,3 +134,141 @@ class TokenEndpoint(base.BaseAuthPlugin):
         ])
 
         return options
+
+    @classmethod
+    def register_argparse_arguments(cls, parser):
+        super(OSCDefaultAuthPlugin, cls).register_argparse_arguments(parser)
+
+        parser.add_argument('--os-tenant-id',
+                            metavar='<auth-tenant-id>',
+                            dest='os_project_id',
+                            default=utils.env('OS_TENANT_ID'),
+                            help=argparse.SUPPRESS)
+        parser.add_argument('--os-tenant-name',
+                            metavar='<auth-tenant-name>',
+                            dest='os_project_name',
+                            default=utils.env('OS_TENANT_NAME'),
+                            help=argparse.SUPPRESS)
+
+    @classmethod
+    def load_from_argparse_arguments(cls, namespace, **kwargs):
+        kwargs['identity_api_version'] = namespace.os_identity_api_version
+        return super(OSCDefaultAuthPlugin, cls).load_from_argparse_arguments(
+            namespace, **kwargs)
+
+    @classmethod
+    def load_from_options(cls, url=None, token=None, username=None,
+                          password=None, project_id=None, project_name=None,
+                          domain_id=None, domain_name=None, trust_id=None,
+                          auth_url=None, identity_api_version=None,
+                          user_domain_id=None, user_domain_name=None,
+                          project_domain_id=None, project_domain_name=None,
+                          **kwargs):
+        plugin = None
+
+        if url or token:
+            # Token flow auth takes priority
+            if not token:
+                raise exc.CommandError(
+                    "You must provide a token via"
+                    " either --os-token or env[OS_TOKEN]")
+
+            if not url:
+                raise exc.CommandError(
+                    "You must provide a service URL via"
+                    " either --os-url or env[OS_URL]")
+
+            plugin = token_endpoint.Token(url, token)
+
+        else:
+            if not username:
+                raise exc.CommandError(
+                    "You must provide a username via"
+                    " either --os-username or env[OS_USERNAME]")
+
+            if not password:
+                # No password, if we've got a tty, try prompting for it
+                if hasattr(sys.stdin, 'isatty') and sys.stdin.isatty():
+                    # Check for Ctl-D
+                    try:
+                        password = getpass.getpass('Password: ')
+                    except EOFError:
+                        pass
+
+            # No password because we did't have a tty or the
+            # user Ctl-D when prompted?
+            if not password:
+                raise exc.CommandError(
+                    "You must provide a password via"
+                    " either --os-password, or env[OS_PASSWORD], "
+                    " or prompted response")
+
+            mutual_exclusion_count = sum((bool(project_id or project_name),
+                                          bool(domain_id or domain_name),
+                                          bool(trust_id)))
+
+            if not auth_url:
+                raise exc.CommandError(
+                    "You must provide an auth url via"
+                    " either --os-auth-url or via env[OS_AUTH_URL]")
+
+            if mutual_exclusion_count == 0:
+                raise exc.CommandError(
+                    "You must provide authentication scope as a project "
+                    "or a domain via --os-project-id or env[OS_PROJECT_ID]"
+                    " --os-project-name or env[OS_PROJECT_NAME],"
+                    " --os-domain-id or env[OS_DOMAIN_ID], or"
+                    " --os-domain-name or env[OS_DOMAIN_NAME], or"
+                    " --os-trust-id or env[OS_TRUST_ID].")
+            elif mutual_exclusion_count > 1:
+                raise exc.CommandError(
+                    "Authentication cannot be scoped to multiple targets. "
+                    "Pick one of project, domain or trust.")
+
+            if trust_id and identity_api_version != '3':
+                raise exc.CommandError(
+                    "Trusts can only be used with Identity API v3")
+
+            if identity_api_version == '3':
+                plugin = v3.Password(auth_url=auth_url,
+                                     username=username,
+                                     password=password,
+                                     user_domain_id=user_domain_id,
+                                     user_domain_name=user_domain_name,
+                                     trust_id=trust_id,
+                                     domain_id=domain_id,
+                                     domain_name=domain_name,
+                                     project_id=project_id,
+                                     project_name=project_name,
+                                     project_domain_id=project_domain_id,
+                                     project_domain_name=project_domain_name)
+
+            elif identity_api_version == '2.0':
+                plugin = v2.Password(auth_url=auth_url,
+                                     username=username,
+                                     password=password,
+                                     tenant_id=project_id,
+                                     tenant_name=project_name)
+
+            elif not identity_api_version:
+                plugin = generic.Password(
+                    auth_url=auth_url,
+                    username=username,
+                    password=password,
+                    user_domain_id=user_domain_id,
+                    user_domain_name=user_domain_name,
+                    trust_id=trust_id,
+                    domain_id=domain_id,
+                    domain_name=domain_name,
+                    project_id=project_id,
+                    project_name=project_name,
+                    project_domain_id=project_domain_id,
+                    project_domain_name=project_domain_name)
+
+            else:
+                raise exc.CommandError(
+                    "Invalid identity_api_version specified. "
+                    "Must be '2.0' or '3'"
+                )
+
+        return cls(plugin)

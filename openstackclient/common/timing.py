@@ -33,7 +33,7 @@ class Timing(lister.Lister):
 
         results = []
         total = 0.0
-        for url, start, end in self.app.timing_data:
+        for url, start, end in self.app.session.timing_data:
             seconds = end - start
             total += seconds
             results.append((url, seconds))

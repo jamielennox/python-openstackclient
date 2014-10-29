@@ -83,33 +83,37 @@ class TestShell(utils.TestCase):
 
             self.app.assert_called_with(["list", "project"])
             self.assertEqual(_shell.options.os_auth_url,
-                             default_args["auth_url"])
+                             default_args.get("auth_url"))
             self.assertEqual(_shell.options.os_project_id,
-                             default_args["project_id"])
+                             default_args.get("project_id"))
             self.assertEqual(_shell.options.os_project_name,
-                             default_args["project_name"])
+                             default_args.get("project_name"))
             self.assertEqual(_shell.options.os_domain_id,
-                             default_args["domain_id"])
+                             default_args.get("domain_id"))
             self.assertEqual(_shell.options.os_domain_name,
-                             default_args["domain_name"])
+                             default_args.get("domain_name"))
             self.assertEqual(_shell.options.os_user_domain_id,
-                             default_args["user_domain_id"])
+                             default_args.get("user_domain_id"))
             self.assertEqual(_shell.options.os_user_domain_name,
-                             default_args["user_domain_name"])
+                             default_args.get("user_domain_name"))
             self.assertEqual(_shell.options.os_project_domain_id,
-                             default_args["project_domain_id"])
+                             default_args.get("project_domain_id"))
             self.assertEqual(_shell.options.os_project_domain_name,
-                             default_args["project_domain_name"])
+                             default_args.get("project_domain_name"))
             self.assertEqual(_shell.options.os_username,
-                             default_args["username"])
+                             default_args.get("username"))
             self.assertEqual(_shell.options.os_password,
-                             default_args["password"])
+                             default_args.get("password"))
             self.assertEqual(_shell.options.os_region_name,
-                             default_args["region_name"])
-            self.assertEqual(_shell.options.os_trust_id,
-                             default_args["trust_id"])
-            self.assertEqual(_shell.options.os_auth_type,
-                             default_args['auth_type'])
+                             default_args.get("region_name", ""))
+
+            # different because it defaults to the default auth plugin
+            if default_args.get('auth_plugin'):
+                self.assertEqual(_shell.options.os_auth_plugin,
+                                 default_args.get("auth_plugin"))
+
+            # self.assertEqual(_shell.options.os_trust_id,
+            #                  default_args["trust_id"])
 
     def _assert_token_auth(self, cmd_options, default_args):
         with mock.patch("openstackclient.shell.OpenStackShell.initialize_app",
@@ -178,281 +182,99 @@ class TestShellPasswordAuth(TestShell):
         flag = "--os-auth-url " + DEFAULT_AUTH_URL
         kwargs = {
             "auth_url": DEFAULT_AUTH_URL,
-            "project_id": "",
-            "project_name": "",
-            "user_domain_id": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_project_id_flow(self):
         flag = "--os-project-id " + DEFAULT_PROJECT_ID
         kwargs = {
-            "auth_url": "",
             "project_id": DEFAULT_PROJECT_ID,
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_project_name_flow(self):
         flag = "--os-project-name " + DEFAULT_PROJECT_NAME
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
             "project_name": DEFAULT_PROJECT_NAME,
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_domain_id_flow(self):
         flag = "--os-domain-id " + DEFAULT_DOMAIN_ID
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
             "domain_id": DEFAULT_DOMAIN_ID,
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_domain_name_flow(self):
         flag = "--os-domain-name " + DEFAULT_DOMAIN_NAME
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
             "domain_name": DEFAULT_DOMAIN_NAME,
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_user_domain_id_flow(self):
         flag = "--os-user-domain-id " + DEFAULT_USER_DOMAIN_ID
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
             "user_domain_id": DEFAULT_USER_DOMAIN_ID,
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_user_domain_name_flow(self):
         flag = "--os-user-domain-name " + DEFAULT_USER_DOMAIN_NAME
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
             "user_domain_name": DEFAULT_USER_DOMAIN_NAME,
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_project_domain_id_flow(self):
         flag = "--os-project-domain-id " + DEFAULT_PROJECT_DOMAIN_ID
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
             "project_domain_id": DEFAULT_PROJECT_DOMAIN_ID,
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_project_domain_name_flow(self):
         flag = "--os-project-domain-name " + DEFAULT_PROJECT_DOMAIN_NAME
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
             "project_domain_name": DEFAULT_PROJECT_DOMAIN_NAME,
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_username_flow(self):
         flag = "--os-username " + DEFAULT_USERNAME
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
             "username": DEFAULT_USERNAME,
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_password_flow(self):
         flag = "--os-password " + DEFAULT_PASSWORD
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
             "password": DEFAULT_PASSWORD,
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
     def test_only_region_name_flow(self):
         flag = "--os-region-name " + DEFAULT_REGION_NAME
         kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
             "region_name": DEFAULT_REGION_NAME,
-            "trust_id": "",
-            "auth_type": "",
         }
         self._assert_password_auth(flag, kwargs)
 
-    def test_only_trust_id_flow(self):
-        flag = "--os-trust-id " + "1234"
-        kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "1234",
-            "auth_type": "",
-        }
-        self._assert_password_auth(flag, kwargs)
+    # def test_only_trust_id_flow(self):
+    #     flag = "--os-trust-id " + "1234"
+    #     kwargs = {
+    #         "trust_id": "1234",
+    #     }
+    #     self._assert_password_auth(flag, kwargs)
 
-    def test_only_auth_type_flow(self):
-        flag = "--os-auth-type " + "v2password"
-        kwargs = {
-            "auth_url": "",
-            "project_id": "",
-            "project_name": "",
-            "domain_id": "",
-            "domain_name": "",
-            "user_domain_id": "",
-            "user_domain_name": "",
-            "project_domain_id": "",
-            "project_domain_name": "",
-            "username": "",
-            "password": "",
-            "region_name": "",
-            "trust_id": "",
-            "auth_type": DEFAULT_AUTH_PLUGIN
-        }
-        self._assert_password_auth(flag, kwargs)
+    # def test_only_auth_plugin_flow(self):
+    #     flag = "--os-auth-type " + "v2password"
+    #     kwargs = {
+    #         "auth_plugin": DEFAULT_AUTH_PLUGIN
+    #     }
+    #     self._assert_password_auth(flag, kwargs)
 
 
 class TestShellTokenAuth(TestShell):
@@ -480,8 +302,8 @@ class TestShellTokenAuth(TestShell):
         os.environ = {}
         flag = ""
         kwargs = {
-            "os_token": "",
-            "os_auth_url": ""
+            "os_token": None,
+            "os_auth_url": None,
         }
         self._assert_token_auth(flag, kwargs)
 

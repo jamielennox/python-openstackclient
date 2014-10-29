@@ -174,10 +174,15 @@ class FakeStdout:
         return result
 
 
+class FakeSession(object):
+    pass
+
+
 class FakeApp(object):
     def __init__(self, _stdout):
         self.stdout = _stdout
         self.client_manager = None
+        self.session = FakeSession()
         self.stdin = sys.stdin
         self.stdout = _stdout or sys.stdout
         self.stderr = sys.stderr
