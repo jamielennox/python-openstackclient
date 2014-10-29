@@ -15,7 +15,6 @@
 
 """Command-line interface to the OpenStack APIs"""
 
-import getpass
 import logging
 import sys
 import traceback
@@ -24,40 +23,17 @@ from cliff import app
 from cliff import command
 from cliff import complete
 from cliff import help
+from keystoneclient import auth
 
 import openstackclient
+from openstackclient.common import auth as osc_auth
 from openstackclient.common import clientmanager
 from openstackclient.common import commandmanager
-from openstackclient.common import exceptions as exc
 from openstackclient.common import timing
 from openstackclient.common import utils
 
 
 DEFAULT_DOMAIN = 'default'
-
-
-def prompt_for_password(prompt=None):
-    """Prompt user for a password
-
-    Propmpt for a password if stdin is a tty.
-    """
-
-    if not prompt:
-        prompt = 'Password: '
-    pw = None
-    # If stdin is a tty, try prompting for the password
-    if hasattr(sys.stdin, 'isatty') and sys.stdin.isatty():
-        # Check for Ctl-D
-        try:
-            pw = getpass.getpass(prompt)
-        except EOFError:
-            pass
-    # No password because we did't have a tty or nothing was entered
-    if not pw:
-        raise exc.CommandError(
-            "No password entered, or found via --os-password or OS_PASSWORD",
-        )
-    return pw
 
 
 class OpenStackShell(app.App):
@@ -174,6 +150,9 @@ class OpenStackShell(app.App):
         iso8601_log.setLevel(logging.ERROR)
 
     def run(self, argv):
+        auth.register_argparse_arguments(self.parser, argv,
+                                         default=osc_auth.OSCDefaultAuthPlugin)
+
         try:
             return super(OpenStackShell, self).run(argv)
         except Exception as e:
@@ -190,33 +169,19 @@ class OpenStackShell(app.App):
             description,
             version)
 
-        # service token auth argument
-        parser.add_argument(
-            '--os-url',
-            metavar='<url>',
-            default=utils.env('OS_URL'),
-            help='Defaults to env[OS_URL]')
+        osc_auth.Session.register_cli_options(parser)
+
         # Global arguments
         parser.add_argument(
             '--os-region-name',
             metavar='<auth-region-name>',
             default=utils.env('OS_REGION_NAME'),
             help='Authentication region name (Env: OS_REGION_NAME)')
+
         parser.add_argument(
-            '--os-cacert',
-            metavar='<ca-bundle-file>',
-            default=utils.env('OS_CACERT'),
-            help='CA certificate bundle file (Env: OS_CACERT)')
-        verify_group = parser.add_mutually_exclusive_group()
-        verify_group.add_argument(
             '--verify',
             action='store_true',
             help='Verify server certificate (default)',
-        )
-        verify_group.add_argument(
-            '--insecure',
-            action='store_true',
-            help='Disable server certificate verification',
         )
         parser.add_argument(
             '--os-default-domain',
@@ -227,12 +192,6 @@ class OpenStackShell(app.App):
             help='Default domain ID, default=' +
                  DEFAULT_DOMAIN +
                  ' (Env: OS_DEFAULT_DOMAIN)')
-        parser.add_argument(
-            '--timing',
-            default=False,
-            action='store_true',
-            help="Print API call timing info",
-        )
 
         return clientmanager.build_plugin_option_parser(parser)
 
@@ -294,9 +253,7 @@ class OpenStackShell(app.App):
 
         self.client_manager = clientmanager.ClientManager(
             auth_options=self.options,
-            verify=self.verify,
             api_version=self.api_version,
-            pw_func=prompt_for_password,
         )
 
     def prepare_to_run_command(self, cmd):
@@ -321,13 +278,7 @@ class OpenStackShell(app.App):
             self.log.debug('got an error: %s', err)
 
         # Process collected timing data
-        if self.options.timing:
-            # Loop through extensions
-            for mod in self.ext_modules:
-                client = getattr(self.client_manager, mod.API_NAME)
-                if hasattr(client, 'get_timings'):
-                    self.timing_data.extend(client.get_timings())
-
+        if self.client_manager.session.timing_data:
             # Use the Timing pseudo-command to generate the output
             tcmd = timing.Timing(self, self.options)
             tparser = tcmd.get_parser('Timing')

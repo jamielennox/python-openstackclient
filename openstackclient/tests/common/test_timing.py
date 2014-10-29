@@ -35,7 +35,7 @@ class TestTiming(utils.TestCommand):
     def setUp(self):
         super(TestTiming, self).setUp()
 
-        self.app.timing_data = []
+        self.app.session.timing_data = []
 
         self.app.client_manager.compute = FakeGenericClient(
             endpoint=fakes.AUTH_URL,
@@ -66,7 +66,7 @@ class TestTiming(utils.TestCommand):
         self.assertEqual(datalist, data)
 
     def test_timing_list(self):
-        self.app.timing_data = [
+        self.app.session.timing_data = [
             (timing_url, timing_start, timing_end),
         ]
 

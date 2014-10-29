@@ -16,7 +16,6 @@
 import logging
 
 from keystoneclient.v2_0 import client as identity_client_v2_0
-from openstackclient.api import auth
 from openstackclient.common import utils
 
 LOG = logging.getLogger(__name__)
@@ -44,7 +43,6 @@ def make_client(instance):
         API_VERSIONS)
     LOG.debug('Instantiating identity client: %s', identity_client)
 
-    LOG.debug('Using auth plugin: %s' % instance._auth_plugin)
     client = identity_client(
         session=instance.session,
     )
@@ -63,7 +61,7 @@ def build_option_parser(parser):
         help='Identity API version, default=' +
              DEFAULT_IDENTITY_API_VERSION +
              ' (Env: OS_IDENTITY_API_VERSION)')
-    return auth.build_auth_plugins_option_parser(parser)
+    return parser
 
 
 class IdentityClientv2_0(identity_client_v2_0.Client):
