@@ -47,7 +47,7 @@ def make_client(instance):
 
     return image_client(
         endpoint,
-        token=instance.auth.get_token(instance.session),
+        token=instance.session.get_token(),
         cacert=instance._cacert,
         insecure=instance._insecure,
     )
