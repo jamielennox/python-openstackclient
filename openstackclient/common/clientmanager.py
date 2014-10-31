@@ -68,6 +68,16 @@ class ClientManager(object):
         return
 
     @property
+    def _cacert(self):
+        if isinstance(self.session.verify, str):
+            return self.session.verify
+        return None
+
+    @property
+    def _insecure(self):
+        return not self.session.verify
+
+    @property
     def auth_ref(self):
         """Dereference will trigger an auth if it hasn't already"""
         return self.auth.get_auth_ref(self.session)
