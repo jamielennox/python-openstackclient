@@ -46,32 +46,9 @@ def make_client(instance):
         API_VERSIONS)
     LOG.debug('Instantiating image client: %s', image_client)
 
-    endpoint = instance.get_endpoint_for_service_type(
-        API_NAME,
-        region_name=instance._region_name,
-    )
-
     client = image_client(
-        endpoint,
-        token=instance.auth.get_token(instance.session),
-        cacert=instance._cacert,
-        insecure=instance._insecure,
-    )
-
-    # Create the low-level API
-
-    image_api = utils.get_client_class(
-        API_NAME,
-        instance._api_version[API_NAME],
-        IMAGE_API_VERSIONS)
-    LOG.debug('Instantiating image api: %s', image_api)
-
-    client.api = image_api(
         session=instance.session,
-        endpoint=instance.get_endpoint_for_service_type(
-            IMAGE_API_TYPE,
-            region_name=instance._region_name,
-        )
+        region_name=instance._region_name,
     )
 
     return client
